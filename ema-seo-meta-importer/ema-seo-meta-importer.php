@@ -2,7 +2,7 @@
 /**
  * Plugin Name: EMA SEO Meta Importer
  * Description: Bulk-sets Yoast SEO titles and meta descriptions from a CSV (url,new_title,new_description). Dry run first, backs up old values, purges LiteSpeed per post.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires PHP: 7.4
  */
 if (!defined('ABSPATH')) exit;
@@ -78,6 +78,29 @@ function ema_smi_page() {
         }
         echo '</tbody></table><hr>';
     }
+    // Revert: restore the Yoast title/description saved in _ema_smi_backup for the listed URLs.
+    if (!empty($_POST['ema_smi_revert_nonce']) && wp_verify_nonce($_POST['ema_smi_revert_nonce'], 'ema_smi_revert') && !empty($_POST['revert_urls'])) {
+        echo '<h2>Revert results</h2><table class="widefat striped"><thead><tr><th>URL</th><th>Post ID</th><th>Status</th></tr></thead><tbody>';
+        foreach (preg_split('/\R/', (string) wp_unslash($_POST['revert_urls'])) as $u) {
+            $u = trim($u); if ($u === '') continue;
+            $id = ema_smi_resolve($u); $st = 'NOT FOUND';
+            if ($id) {
+                $bk = get_post_meta($id, '_ema_smi_backup', true);
+                if (is_array($bk)) {
+                    foreach (array('_yoast_wpseo_title' => 'title', '_yoast_wpseo_metadesc' => 'desc') as $key => $f) {
+                        if ((string) $bk[$f] === '') delete_post_meta($id, $key); else update_post_meta($id, $key, wp_slash($bk[$f]));
+                    }
+                    do_action('litespeed_purge_post', $id);
+                    $st = 'REVERTED';
+                } else { $st = 'NO BACKUP (unchanged)'; }
+            }
+            echo '<tr><td>' . esc_html($u) . '</td><td>' . (int) $id . '</td><td><b>' . esc_html($st) . '</b></td></tr>';
+        }
+        echo '</tbody></table><hr>';
+    }
+    echo '<h2>Revert</h2><form method="post">';
+    wp_nonce_field('ema_smi_revert', 'ema_smi_revert_nonce');
+    echo '<p><textarea name="revert_urls" rows="4" cols="90" placeholder="One URL per line"></textarea></p><p><button class="button">Revert these URLs to saved values</button></p></form><hr><h2>Import</h2>';
     echo '<form method="post" enctype="multipart/form-data">';
     wp_nonce_field('ema_smi', 'ema_smi_nonce');
     echo '<p><input type="file" name="csv" accept=".csv" required></p>';
